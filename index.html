@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Blockudoku Klon</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --board-bg: #1e1e1e;
+            --cell-bg: #2d2d2d;
+            --text-color: #ffffff;
+            --grid-thick-line: #888;
+            --active-preview-color: rgba(255, 255, 255, 0.4);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        header {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 14px;
+            background-color: var(--cell-bg);
+            color: white;
+            border: 1px solid var(--grid-thick-line);
+            border-radius: 4px;
+            margin-top: 0;
+            cursor: pointer;
+        }
+
+        #game-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            grid-template-rows: repeat(9, 1fr);
+            width: 95vw;
+            max-width: 380px;
+            height: 95vw;
+            max-height: 380px;
+            background-color: var(--grid-thick-line);
+            gap: 1px;
+            border: 2px solid var(--grid-thick-line);
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .cell {
+            background-color: var(--cell-bg);
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            transition: background-color 0.1s;
+        }
+
+        .cell.preview {
+            background-color: var(--active-preview-color) !important;
+            box-shadow: inset 0 0 4px rgba(0,0,0,0.2) !important;
+        }
+        
+        .cell.clear-preview {
+            background-color: rgba(255, 255, 255, 0.7) !important;
+            box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.9) !important;
+            transition: background-color 0.15s ease-out;
+            z-index: 5;
+        }
+        
+        @keyframes popAndVanish {
+            0% { transform: scale(1); background-color: #ffffff; opacity: 1; }
+            40% { transform: scale(1.15); background-color: #ffffff; opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+
+        .cell.clearing {
+            animation: popAndVanish 0.35s ease-in forwards;
+            z-index: 10;
+        }
+
+        .cell:nth-child(3n) { border-right: 2px solid var(--grid-thick-line); }
+        .cell:nth-child(9n) { border-right: none; }
+        .cell:nth-child(n+19):nth-child(-n+27),
+        .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--grid-thick-line); }
+
+        #tray {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            width: 100%;
+            height: 120px;
+            margin-top: 30px;
+        }
+
+        .tray-slot {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .shape {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .shape-row {
+            display: flex;
+            gap: 1px;
+        }
+
+        .shape-block {
+            width: 20px;
+            height: 20px;
+            box-shadow: inset 0 0 2px rgba(0,0,0,0.3);
+        }
+
+        .shape-block.empty {
+            background-color: transparent !important;
+            box-shadow: none !important;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 18px;
+            background-color: #4da6ff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+        
+        .is-dragging {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1000;
+            transform: scale(1.5) translate(-50%, -100%);
+            transform-origin: top left;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>Score: <span id="score">0</span></div>
+        <div class="header-buttons">
+            <button class="btn-small" onclick="initGame(true)">Neu starten</button>
+        </div>
+    </header>
+
+    <div id="game-container">
+        <div id="board"></div>
+        <div id="tray">
+            <div class="tray-slot" id="slot-0"></div>
+            <div class="tray-slot" id="slot-1"></div>
+            <div class="tray-slot" id="slot-2"></div>
+        </div>
+    </div>
+
+    <div id="game-over">
+        <h2>Game Over</h2>
+        <p>Dein Score: <span id="final-score">0</span></p>
+        <button onclick="initGame(true)">Nochmal spielen</button>
+    </div>
+
+    <script>
+        const BOARD_SIZE = 9;
+        let board = [];
+        let score = 0;
+        let trayShapes = [null, null, null];
+        let currentDropTarget = null;
+        let isAnimating = false;
+
+        // Erweiterte Bibliothek mit Wahrscheinlichkeiten (weight) und dynamischen Farben
+        const SHAPES_LIB = [
+            // 1er Block (Blau - sehr häufig)
+            { shape: [[1]], weight: 20, color: '#4da6ff' },
+            
+            // 2er Linie (Grün - häufig)
+            { shape: [[1,1]], weight: 12, color: '#2ecc71' }, { shape: [[1],[1]], weight: 12, color: '#2ecc71' },
+            
+            // 3er Linie (Grün - häufig)
+            { shape: [[1,1,1]], weight: 10, color: '#2ecc71' }, { shape: [[1],[1],[1]], weight: 10, color: '#2ecc71' },
+            
+            // 4er Linie (Grün - mittel)
+            { shape: [[1,1,1,1]], weight: 6, color: '#2ecc71' }, { shape: [[1],[1],[1],[1]], weight: 6, color: '#2ecc71' },
+            
+            // 5er Linie (Rot - SEHR SELTEN, da gefährlich)
+            { shape: [[1,1,1,1,1]], weight: 1.5, color: '#e74c3c' }, { shape: [[1],[1],[1],[1],[1]], weight: 1.5, color: '#e74c3c' },
+            
+            // Kleines L (Orange - mittel)
+            { shape: [[1,0],[1,1]], weight: 7, color: '#e67e22' }, { shape: [[0,1],[1,1]], weight: 7, color: '#e67e22' }, 
+            { shape: [[1,1],[1,0]], weight: 7, color: '#e67e22' }, { shape: [[1,1],[0,1]], weight: 7, color: '#e67e22' },
+            
+            // Asymmetrisches L (Gelb - mittel)
+            { shape: [[1,0],[1,0],[1,1]], weight: 4, color: '#f1c40f' }, { shape: [[0,1],[0,1],[1,1]], weight: 4, color: '#f1c40f' }, 
+            { shape: [[1,1],[1,0],[1,0]], weight: 4, color: '#f1c40f' }, { shape: [[1,1],[0,1],[0,1]], weight: 4, color: '#f1c40f' },
+            { shape: [[1,1,1],[1,0,0]], weight: 4, color: '#f1c40f' }, { shape: [[1,1,1],[0,0,1]], weight: 4, color: '#f1c40f' }, 
+            { shape: [[1,0,0],[1,1,1]], weight: 4, color: '#f1c40f' }, { shape: [[0,0,1],[1,1,1]], weight: 4, color: '#f1c40f' },
+            
+            // Großes L (Dunkelorange - selten)
+            { shape: [[1,0,0],[1,0,0],[1,1,1]], weight: 2, color: '#d35400' }, { shape: [[1,1,1],[1,0,0],[1,0,0]], weight: 2, color: '#d35400' }, 
+            { shape: [[0,0,1],[0,0,1],[1,1,1]], weight: 2, color: '#d35400' }, { shape: [[1,1,1],[0,0,1],[0,0,1]], weight: 2, color: '#d35400' },
+            
+            // 2x2 Quadrat (Lila - häufig)
+            { shape: [[1,1],[1,1]], weight: 9, color: '#9b59b6' },
+            
+            // 3x3 Quadrat (Dunkellila - SEHR SELTEN)
+            { shape: [[1,1,1],[1,1,1],[1,1,1]], weight: 1, color: '#8e44ad' },
+            
+            // Kleines T (Pink - mittel)
+            { shape: [[1,1,1],[0,1,0]], weight: 5, color: '#fd79a8' }, { shape: [[0,1,0],[1,1,1]], weight: 5, color: '#fd79a8' }, 
+            { shape: [[1,0],[1,1],[1,0]], weight: 5, color: '#fd79a8' }, { shape: [[0,1],[1,1],[0,1]], weight: 5, color: '#fd79a8' },
+            
+            // Großes T (Dunkelpink - selten)
+            { shape: [[1,1,1],[0,1,0],[0,1,0]], weight: 2, color: '#e84393' }, { shape: [[0,1,0],[0,1,0],[1,1,1]], weight: 2, color: '#e84393' }, 
+            { shape: [[1,0,0],[1,1,1],[1,0,0]], weight: 2, color: '#e84393' }, { shape: [[0,0,1],[1,1,1],[0,0,1]], weight: 2, color: '#e84393' },
+            
+            // Kreuz (Dunkelpink - selten)
+            { shape: [[0,1,0],[1,1,1],[0,1,0]], weight: 2, color: '#e84393' },
+            
+            // Z/S-Formen (Türkis - mittel)
+            { shape: [[1,1,0],[0,1,1]], weight: 5, color: '#00cec9' }, { shape: [[0,1,1],[1,1,0]], weight: 5, color: '#00cec9' },
+            { shape: [[0,1],[1,1],[1,0]], weight: 5, color: '#00cec9' }, { shape: [[1,0],[1,1],[0,1]], weight: 5, color: '#00cec9' },
+            
+            // U/C-Formen (Cyan - selten)
+            { shape: [[1,0,1],[1,1,1]], weight: 3, color: '#00badb' }, { shape: [[1,1,1],[1,0,1]], weight: 3, color: '#00badb' }, 
+            { shape: [[1,1],[0,1],[1,1]], weight: 3, color: '#00badb' }, { shape: [[1,1],[1,0],[1,1]], weight: 3, color: '#00badb' }
+        ];
+
+        const boardEl = document.getElementById('board');
+        const scoreEl = document.getElementById('score');
+        const gameOverEl = document.getElementById('game-over');
+        
+        let draggedShape = null;
+        let draggedShapeIndex = -1;
+        let dragElement = null;
+
+        function getRandomShape() {
+            let totalWeight = SHAPES_LIB.reduce((sum, item) => sum + item.weight, 0);
+            let randomNum = Math.random() * totalWeight;
+            let currentWeight = 0;
+            for (let item of SHAPES_LIB) {
+                currentWeight += item.weight;
+                if (randomNum <= currentWeight) {
+                    return item;
+                }
+            }
+            return SHAPES_LIB[0];
+        }
+
+        function saveState() {
+            const state = {
+                board: board,
+                score: score,
+                trayShapes: trayShapes
+            };
+            localStorage.setItem('blockudoku_state', JSON.stringify(state));
+        }
+
+        function loadState() {
+            const stateStr = localStorage.getItem('blockudoku_state');
+            if (stateStr) {
+                try {
+                    const state = JSON.parse(stateStr);
+                    board = state.board;
+                    score = state.score;
+                    trayShapes = state.trayShapes;
+                    return true;
+                } catch(e) {
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        function initGame(forceNew = false) {
+            isAnimating = false;
+            gameOverEl.style.display = 'none';
+
+            if (forceNew) {
+                localStorage.removeItem('blockudoku_state');
+            }
+
+            if (!forceNew && loadState()) {
+                updateScore();
+                renderBoard();
+                renderEntireTray();
+                checkGameOver();
+            } else {
+                board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(0));
+                score = 0;
+                trayShapes = [null, null, null];
+                updateScore();
+                renderBoard();
+                fillTray();
+            }
+        }
+
+        function renderBoard() {
+            boardEl.innerHTML = '';
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (board[y][x] !== 0) { // Color string saved in board array
+                        cell.classList.add('filled');
+                        cell.style.backgroundColor = board[y][x];
+                        cell.style.boxShadow = 'inset 0 0 4px rgba(0,0,0,0.3)';
+                    }
+                    cell.id = `cell-${y}-${x}`;
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function fillTray() {
+            for (let i = 0; i < 3; i++) {
+                if (!trayShapes[i]) {
+                    trayShapes[i] = getRandomShape();
+                }
+            }
+            renderEntireTray();
+            checkGameOver();
+            saveState();
+        }
+
+        function renderEntireTray() {
+            for (let i = 0; i < 3; i++) {
+                renderShapeInTray(i);
+            }
+        }
+
+        function renderShapeInTray(index) {
+            const slot = document.getElementById('slot-' + index);
+            slot.innerHTML = '';
+            const shapeObj = trayShapes[index];
+            if (!shapeObj) return;
+
+            const shapeEl = document.createElement('div');
+            shapeEl.className = 'shape';
+            shapeEl.dataset.index = index;
+
+            shapeObj.shape.forEach(row => {
+                const rowEl = document.createElement('div');
+                rowEl.className = 'shape-row';
+                row.forEach(val => {
+                    const block = document.createElement('div');
+                    block.className = 'shape-block' + (val ? '' : ' empty');
+                    if (val) block.style.backgroundColor = shapeObj.color;
+                    rowEl.appendChild(block);
+                });
+                shapeEl.appendChild(rowEl);
+            });
+
+            shapeEl.addEventListener('pointerdown', startDrag);
+            slot.appendChild(shapeEl);
+        }
+
+        function startDrag(e) {
+            if (isAnimating) return;
+            
+            draggedShapeIndex = parseInt(e.currentTarget.dataset.index);
+            draggedShape = trayShapes[draggedShapeIndex];
+            
+            dragElement = e.currentTarget.cloneNode(true);
+            dragElement.classList.add('is-dragging');
+            document.body.appendChild(dragElement);
+            
+            e.currentTarget.style.opacity = '0';
+            currentDropTarget = null;
+            
+            // Set dynamic preview color (append '66' for ~40% hex opacity)
+            boardEl.style.setProperty('--active-preview-color', draggedShape.color + '66');
+
+            moveDragElement(e);
+
+            document.addEventListener('pointermove', onDrag);
+            document.addEventListener('pointerup', endDrag);
+        }
+
+        function onDrag(e) {
+            moveDragElement(e);
+        }
+
+        function moveDragElement(e) {
+            if (!dragElement) return;
+            
+            const pointerX = e.clientX;
+            const pointerY = e.clientY - 60; 
+            
+            dragElement.style.left = pointerX + 'px';
+            dragElement.style.top = pointerY + 'px';
+
+            calculatePreview(pointerX, pointerY);
+        }
+        
+        function clearPreview() {
+            document.querySelectorAll('.cell.preview').forEach(el => el.classList.remove('preview'));
+            document.querySelectorAll('.cell.clear-preview').forEach(el => el.classList.remove('clear-preview'));
+        }
+
+        function calculatePreview(pointerX, pointerY) {
+            clearPreview();
+            currentDropTarget = null;
+
+            const boardRect = boardEl.getBoundingClientRect();
+            const dragRect = dragElement.getBoundingClientRect();
+            
+            const cellSize = boardRect.width / BOARD_SIZE;
+            const blockVisualSize = dragRect.width / draggedShape.shape[0].length; 
+
+            const firstBlockCenterX = dragRect.left + (blockVisualSize / 2);
+            const firstBlockCenterY = dragRect.top + (blockVisualSize / 2);
+
+            if (firstBlockCenterX < boardRect.left - cellSize || firstBlockCenterX > boardRect.right + cellSize ||
+                firstBlockCenterY < boardRect.top - cellSize || firstBlockCenterY > boardRect.bottom + cellSize) {
+                return; 
+            }
+
+            const gridX = Math.floor((firstBlockCenterX - boardRect.left) / cellSize);
+            const gridY = Math.floor((firstBlockCenterY - boardRect.top) / cellSize);
+
+            if (canPlaceShape(draggedShape.shape, gridX, gridY)) {
+                drawPreview(draggedShape.shape, gridX, gridY);
+                showClearPreview(draggedShape.shape, gridX, gridY);
+                currentDropTarget = { x: gridX, y: gridY }; 
+            }
+        }
+
+        function drawPreview(shapeMatrix, startX, startY) {
+            for (let y = 0; y < shapeMatrix.length; y++) {
+                for (let x = 0; x < shapeMatrix[y].length; x++) {
+                    if (shapeMatrix[y][x]) {
+                        const cell = document.getElementById(`cell-${startY + y}-${startX + x}`);
+                        if (cell) cell.classList.add('preview');
+                    }
+                }
+            }
+        }
+
+        function showClearPreview(shapeMatrix, startX, startY) {
+            let tempBoard = board.map(row => [...row]);
+            
+            for (let y = 0; y < shapeMatrix.length; y++) {
+                for (let x = 0; x < shapeMatrix[y].length; x++) {
+                    if (shapeMatrix[y][x]) {
+                        tempBoard[startY + y][startX + x] = 1; // Dummy fill
+                    }
+                }
+            }
+
+            let cellsToClear = [];
+            
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                if (tempBoard[y].every(cell => cell !== 0)) {
+                    for(let x = 0; x < BOARD_SIZE; x++) cellsToClear.push(`${y},${x}`);
+                }
+            }
+            for (let x = 0; x < BOARD_SIZE; x++) {
+                let full = true;
+                for (let y = 0; y < BOARD_SIZE; y++) {
+                    if (tempBoard[y][x] === 0) full = false;
+                }
+                if (full) {
+                    for(let y = 0; y < BOARD_SIZE; y++) cellsToClear.push(`${y},${x}`);
+                }
+            }
+            for (let by = 0; by < 3; by++) {
+                for (let bx = 0; bx < 3; bx++) {
+                    let full = true;
+                    for (let y = 0; y < 3; y++) {
+                        for (let x = 0; x < 3; x++) {
+                            if (tempBoard[by * 3 + y][bx * 3 + x] === 0) full = false;
+                        }
+                    }
+                    if (full) {
+                        for (let y = 0; y < 3; y++) {
+                            for (let x = 0; x < 3; x++) {
+                                cellsToClear.push(`${by * 3 + y},${bx * 3 + x}`);
+                            }
+                        }
+                    }
+                }
+            }
+
+            cellsToClear.forEach(str => {
+                const [y, x] = str.split(',');
+                const cell = document.getElementById(`cell-${y}-${x}`);
+                if (cell) {
+                    cell.classList.add('clear-preview');
+                }
+            });
+        }
+
+        f
